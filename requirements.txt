@@ -1,0 +1,9 @@
+pandas==2.2.3
+numpy==1.26.4
+faker==26.0.0
+duckdb==1.1.3
+dbt-duckdb==1.8.4
+great-expectations==0.18.19
+apache-airflow==2.9.3
+pytest==8.3.3
+pyarrow==17.0.0

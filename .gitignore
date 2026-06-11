@@ -1,0 +1,33 @@
+# Generated data — large parquet files, do not commit
+data/raw/
+data/mart/
+data/warehouse.duckdb
+data/warehouse.duckdb.wal
+
+# Sample data — OK to commit (50k rows, small)
+!data/sample/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# dbt
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_project/logs/
+
+# Airflow
+logs/
+airflow.db
+airflow.cfg
+
+# Secrets
+.env
+*.env
+
+# OS
+.DS_Store
+Thumbs.db

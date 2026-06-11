@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  airflow:
+    image: apache/airflow:2.9.3
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - ../data:/opt/airflow/data
+      - ../dbt_project:/opt/airflow/dbt_project
+    ports:
+      - '8080:8080'
+    command: webserver
+
+  metabase:
+    image: metabase/metabase:latest
+    ports:
+      - '3000:3000'
+    volumes:
+      - ../metabase:/metabase-data

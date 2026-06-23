@@ -34,6 +34,10 @@ metabase/plugins/
 metabase/metabase.db*
 metabase/metabase.db.mv.db
 
+# Internal docs & Claude config — not for public repo
+docs/
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

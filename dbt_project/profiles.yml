@@ -1,0 +1,15 @@
+# Profile cho project logistics - dbt-duckdb
+# Dat DBT_PROFILES_DIR=<...>/dbt_project de dbt doc file nay.
+# Path DuckDB relative toi CWD khi chay dbt (chay tu trong dbt_project/) -> ../data/warehouse.duckdb
+logistics:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../data/warehouse.duckdb
+      threads: 4
+      # extensions parquet/httpfs de read_parquet truc tiep tu data/raw
+      extensions:
+        - parquet
+      # external_root: noi mart export parquet (data/mart) neu can materialize external
+      external_root: ../data/mart

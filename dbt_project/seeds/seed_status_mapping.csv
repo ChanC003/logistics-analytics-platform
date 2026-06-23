@@ -1,0 +1,6 @@
+status,status_label_vn,outcome_group,is_terminal
+delivered,Giao thành công,success,true
+return_to_sender,Hoàn người gửi,return,true
+cancelled,Đã huỷ,cancelled,true
+picking,Đang lấy hàng,in_progress,false
+delivering,Đang giao,in_progress,false

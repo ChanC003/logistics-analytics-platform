@@ -4,150 +4,209 @@
 
 ```
 ┌─────────────────────┐
-│ Synthetic Generator │  Python (Faker, numpy, pandas)
-│  src/generators/    │  Seed-controlled, reproducible
+│ Synthetic Generator │  Python (Faker, numpy, pandas) — seed=42, reproducible
+│  src/generators/    │  59.4M rows | 11 parquet files | ~52 min | ~2.7 GB
 └──────────┬──────────┘
-           │ writes .parquet
+           │ .parquet files in data/raw/
            ▼
 ┌─────────────────────┐
-│   data/raw/         │  Bronze layer — raw fact + dim
+│   data/raw/         │  Bronze layer — raw fact + dim (with injected dirty data)
+│   11 parquet files  │  ~2.7 GB, snappy compression
 └──────────┬──────────┘
-           │ COPY INTO
+           │ dbt read_parquet via meta.external_location
            ▼
 ┌─────────────────────┐
-│      DuckDB         │  warehouse.duckdb (file-based, columnar)
-│   warehouse.duckdb  │
+│ dbt staging (views) │  Staging layer — clean, cast, dedup, quarantine heavy issues
+│  main_staging.*     │  11 views: 6 dim + 5 fact
 └──────────┬──────────┘
-           │ dbt-duckdb
+           │ dbt ref()
            ▼
 ┌─────────────────────┐
-│   dbt Models        │  staging → core → mart
-│  dbt_project/       │
+│  dbt core (tables)  │  Core layer — star schema, FK integrity, phanloaivung derived
+│  main_core.*        │  6 dim + 5 fct = 58M+ rows
 └──────────┬──────────┘
-           │ orchestrated by
+           │ dbt ref()
            ▼
 ┌─────────────────────┐
-│  Airflow Orchestrate│  Daily DAG: generate → load → dbt run → test
-│   airflow/dags/     │
+│  dbt mart (tables)  │  Mart layer — pre-aggregated for BI, partitioned by week_start
+│  main_mart.*        │  5 mart tables, 8,951 total rows
 └──────────┬──────────┘
-           │ connects to
+           │ Airflow orchestrates daily
            ▼
 ┌─────────────────────┐
-│  Metabase Dashboard │  Self-hosted Docker, DuckDB native connector
-│  localhost:3000     │  KPI + hub performance + SLA + COD
+│  Airflow DAG        │  logistics_daily: dbt_seed → dbt_run → dbt_test → dbt_snapshot
+│  localhost:8080     │  → quality_check (5/5 PASS, ~3 min total)
+└──────────┬──────────┘
+           │ DuckDB file mounted read-only
+           ▼
+┌─────────────────────┐
+│  Metabase Dashboard │  MotherDuck DuckDB driver v0.3.0 (Ubuntu/glibc custom image)
+│  localhost:3000     │  4 dashboards: KPI Overview / Hub Performance / SLA Analysis / COD Recon
 └─────────────────────┘
 ```
 
+---
+
 ## 2. Layer responsibility
 
-| Layer | Tech | Output | Quy ước |
+| Layer | Tech | Output | Schema |
 |---|---|---|---|
-| **Bronze (raw)** | Python generator | `.parquet` theo bảng | 1 file = 1 table, partition theo tháng nếu > 1M row |
-| **Silver (staging)** | dbt | `stg_*` view | Cleanup: rename, cast type, basic filter — không join |
-| **Gold (core)** | dbt | `fct_*`, `dim_*` table | Star schema, có PK/FK test |
-| **Mart (business)** | dbt | `mart_*` table | Pre-aggregated cho Metabase, partition theo tuần |
-| **Serving** | Metabase | Dashboard, Question, Chart | Kết nối trực tiếp DuckDB qua JDBC connector |
+| **Bronze (raw)** | Python generator | 11 `.parquet` files (~2.7 GB) | `data/raw/` |
+| **Staging** | dbt (view) | `stg_*` views (cleaned, cast, deduped) | `main_staging` |
+| **Core** | dbt (table) | `dim_*` + `fct_*` tables (star schema) | `main_core` |
+| **Mart** | dbt (table) | `mart_*` tables (pre-aggregated, weekly) | `main_mart` |
+| **Snapshot** | dbt (snapshot) | `snap_client_tier` (SCD2) | `snapshot` |
+| **Seed** | dbt (seed) | `seed_status_mapping`, `seed_sla_threshold` | `main_seed` |
+| **Orchestration** | Airflow LocalExecutor | DAG `logistics_daily` | — |
+| **Serving** | Metabase v0.52.9 | Dashboards on mart tables (4 dashboards, 9 questions) | localhost:3000 |
 
-## 3. dbt model layout
+---
 
-```
-dbt_project/models/
-├── staging/
-│   ├── stg_warehouse.sql              ← dim_warehouse (clean: TRIM name, fill null lat/lon)
-│   ├── stg_client.sql                 ← dim_client (clean: null type, special chars)
-│   ├── stg_shipper.sql                ← dim_shipper (clean: plate format, future hire_date)
-│   ├── stg_shippingorder.sql          ← data_shippingorder_now
-│   ├── stg_inside_history.sql         ← data_inside_history (package events)
-│   ├── stg_transportation.sql         ← data_transportation (truck trips)
-│   ├── stg_shipment.sql               ← data_shipment (lastmile)
-│   └── stg_cod.sql                    ← data_cod
-│   (dim_province, dim_district, dim_date: không cần staging — data tĩnh/hardcode, không có dirty)
-├── core/
-│   ├── dim_warehouse.sql
-│   ├── dim_province.sql
-│   ├── dim_district.sql
-│   ├── dim_client.sql
-│   ├── dim_shipper.sql
-│   ├── dim_date.sql
-│   ├── fct_shippingorder.sql          ← từ data_shippingorder_now
-│   ├── fct_inside_history.sql         ← từ data_inside_history
-│   ├── fct_transportation.sql         ← từ data_transportation
-│   ├── fct_shipment.sql               ← từ data_shipment (lastmile)
-│   └── fct_cod.sql                    ← từ data_cod
-└── mart/
-    ├── mart_daily_kpi.sql              ← Tổng đơn, success rate, SLA, COD
-    ├── mart_hub_performance.sql        ← Performance từng hub
-    ├── mart_sla_breakdown.sql          ← Phân tích SLA theo region/route
-    ├── mart_failure_reasons.sql        ← Top reason fail
-    └── mart_cod_reconciliation.sql     ← Đối soát COD
-```
-
-## 4. Airflow DAG
-
-**DAG: `logistics_daily`**
+## 3. dbt model layout (actual)
 
 ```
-generate_data (1x/ngày, sinh incremental rows)
-    ↓
-load_to_duckdb (COPY raw .parquet vào DuckDB)
-    ↓
-dbt_run (build staging → core → mart)
-    ↓
-dbt_test (data contract: not_null, unique, accepted_values, relationships)
-    ↓
-quality_check (Great Expectations gate)
-    ↓
-notify_slack (success/fail)
+dbt_project/
+├── models/
+│   ├── staging/                           -- 11 models (view)
+│   │   ├── stg_warehouse.sql              -- TRIM name, fill null lat/lon, cast float→bool
+│   │   ├── stg_client.sql                 -- normalize client_type, null tier default
+│   │   ├── stg_shipper.sql                -- clean plate format (keep key for FK integrity)
+│   │   ├── stg_shippingorder.sql          -- dedup order_code (ROW_NUMBER), cast types, quarantine heavy
+│   │   ├── stg_inside_history.sql         -- null action_category default, cast warehouse FK
+│   │   ├── stg_transportation.sql         -- cast float warehouse IDs (NaN→NULL via to_bigint macro)
+│   │   ├── stg_shipment.sql               -- cast types, quarantine heavy
+│   │   ├── stg_cod.sql                    -- filter adjustment records, cast discrepancy sign
+│   │   └── _sources.yml                   -- 11 parquet sources via meta.external_location
+│   ├── core/                              -- 11 models (table)
+│   │   ├── dim_warehouse.sql              -- 2,000 rows (8 KTC + 1,992 BC)
+│   │   ├── dim_province.sql               -- 63 provinces
+│   │   ├── dim_district.sql               -- 711 districts
+│   │   ├── dim_client.sql                 -- 50,000 clients
+│   │   ├── dim_shipper.sql                -- 1,500 shippers
+│   │   ├── dim_date.sql                   -- 731 dates (2024–2025)
+│   │   ├── fct_shipping_order.sql         -- 4,913,037 rows (deduped, quarantine removed)
+│   │   ├── fct_inside_history.sql         -- 40,606,614 rows
+│   │   ├── fct_transportation.sql         -- 4,165,657 rows
+│   │   ├── fct_shipment.sql               -- 6,128,573 rows
+│   │   └── fct_cod.sql                    -- 3,000,047 rows (adjustment records excluded)
+│   └── mart/                              -- 5 models (table)
+│       ├── mart_daily_kpi.sql             -- 2,924 rows (weekly KPI, 4 metrics per week)
+│       ├── mart_hub_performance.sql       -- 1,992 rows (per-warehouse metrics)
+│       ├── mart_sla_breakdown.sql         -- 3,960 rows (SLA by region/week)
+│       ├── mart_failure_reasons.sql       -- 25 rows (failure reason ranking)
+│       └── mart_cod_reconciliation.sql    -- 550 rows (COD by region/year)
+├── macros/
+│   ├── to_bigint.sql                      -- SAFE_CAST DOUBLE→BIGINT (NaN→NULL)
+│   ├── parse_dt.sql                       -- TRY_CAST VARCHAR→DATE
+│   ├── normalize_order_status.sql         -- DONE/FINISH→delivered (enum drift cleanup)
+│   └── keep_non_quarantine.sql            -- filter WHERE _data_quality != 'heavy_issue'
+├── snapshots/
+│   └── snap_client_tier.sql               -- SCD2 snapshot of client tier changes
+├── seeds/
+│   ├── seed_status_mapping.csv            -- status group → display name + is_end flag
+│   └── seed_sla_threshold.csv            -- SLA target hours by phanloaivung
+├── tests/
+│   ├── assert_cod_math.sql               -- COD discrepancy = cod_amount - cod_collected
+│   └── assert_delivered_no_failure.sql   -- delivered orders should not have failure_reason (warn)
+├── dbt_project.yml                        -- project: logistics, pure ASCII
+└── profiles.yml                           -- target: dev, path: ../data/warehouse.duckdb
 ```
 
-Metabase tự kết nối DuckDB — không cần bước export JSON. Retry: 2 lần, backoff exponential. SLA alert: 30 phút.
+---
 
-## 5. Quality gates
+## 4. Airflow DAG — `logistics_daily`
 
-| Stage | Check | Action nếu fail |
+**Image:** `logistics-airflow:2.9.3` (FROM airflow-custom:2.9.3 + dbt-duckdb 1.7.5)
+**Executor:** LocalExecutor
+**Schedule:** `0 6 * * *` (06:00 UTC daily)
+**Metadata DB:** PostgreSQL 16-alpine
+
+```
+dbt_seed (14s)
+    ↓
+dbt_run (111s)  -- build staging → core → mart, 58M+ rows
+    ↓
+dbt_test (17s)  -- 88 PASS / 1 WARN (dirty light_issue expected)
+    ↓
+dbt_snapshot (15s)  -- SCD2 snap_client_tier
+    ↓
+quality_check (1s)  -- Python duckdb: 5 mart tables, row count + null key assertions
+```
+
+**DAG flags:** `--no-partial-parse` prevents KeyError on manifest cache (Python 3.12 + dbt 1.7 known issue).
+
+**quality_check assertions:**
+| Table | Key Column | Min Rows |
 |---|---|---|
-| Post-generate | Row count > threshold | Block, alert |
-| Post-load | DuckDB count == file count | Block, retry |
-| Post-dbt-run | dbt test pass | Quarantine mart, alert |
-| Pre-publish | Great Expectations: KPI in range | Hold publish, alert |
+| mart_daily_kpi | week_start | 2,000 |
+| mart_hub_performance | warehouse_id | 100 |
+| mart_sla_breakdown | week_start | 1,000 |
+| mart_failure_reasons | failure_reason | 5 |
+| mart_cod_reconciliation | region | 10 |
 
-## 6. Metabase setup
+---
 
-**Self-hosted via Docker** — chạy song song với Airflow trong `docker-compose.yml`.
+## 5. Docker compose stack
 
-| Item | Value |
+```yaml
+# docker/docker-compose.yml
+services:
+  airflow-db:        postgres:16-alpine  (metadata DB, healthy check)
+  airflow-init:      one-shot DB migrate + admin user create
+  airflow-webserver: logistics-airflow:2.9.3  port 8080
+  airflow-scheduler: logistics-airflow:2.9.3  LocalExecutor
+  metabase:          logistics-metabase:0.52.9  port 3000  (custom Ubuntu image)
+                     + /app/plugins/duckdb.metabase-driver.jar (MotherDuck v0.3.0, 73 MB)
+                     + /data/warehouse.duckdb (writable mount — DuckDB requires write lock to open)
+```
+
+**Volume mounts (Airflow):**
+- `../airflow/dags` → `/opt/airflow/dags` (ro)
+- `../dbt_project` → `/opt/airflow/dbt_project` (**writable** — dbt writes logs)
+- `../data` → `/opt/airflow/data`
+
+---
+
+## 6. Data quality design
+
+**Rule: quarantine at FACT layer, never at dimension.**
+Dropping heavy_issue rows from dimension creates orphan facts (broken FK integrity).
+Dimensions keep all keys; only attributes are cleaned.
+
+| Stage | Check | Action on fail |
+|---|---|---|
+| Staging | Filter `_data_quality = 'heavy_issue'` from fact only | Row quarantined, not in core |
+| dbt test | 89 tests: not_null/unique (PK), relationships (FK), accepted_values (enum) | Pipeline fails on ERROR, warns on WARN |
+| quality_check | Row count + null key assertion on mart tables | Airflow task fails |
+
+**Dirty data injected (by design):**
+- order_code duplicates: ~2,562 (dirty S9) — deduped in staging
+- status enum drift: DONE/FINISH → normalized to `delivered` in macro
+- NULL warehouse FK in inside_history: 5.01% (dirty SH2)
+- NULL vehicle_weight: 5.95% (dirty TR2)
+- delivered orders with failure_reason: 1,525 (light_issue) → dbt WARN
+
+---
+
+## 7. Performance actuals
+
+| Component | Actual |
 |---|---|
-| Image | `metabase/metabase:latest` |
-| Port | `3000` |
-| DuckDB connector | `metabase-duckdb-driver` (community JDBC driver) |
-| DB path (in container) | `/data/warehouse.duckdb` (volume mount từ host) |
-| Dashboard folders | KPI Overview / Hub Performance / SLA Analysis / COD Reconciliation |
+| Generate 59M rows | 3,131s (~52 min) |
+| dbt full run (in container) | ~111s |
+| dbt test (89 tests) | ~17s |
+| Metabase init | ~52s |
+| Full Airflow DAG | ~3 min |
+| DuckDB file size | ~5.1 GB |
+| Raw parquet total | ~2.7 GB |
 
-**Dashboard plan:**
+---
 
-| Dashboard | Key metrics |
-|---|---|
-| KPI Overview | Total shipments, success rate, SLA breach %, avg delivery time, total COD |
-| Hub Performance | Throughput / hub, top 10 busiest hub, regional breakdown |
-| SLA Analysis | Breach rate by region / route type / day-of-week, trend 4 tuần |
-| COD Reconciliation | Collection rate, pending COD by shipper, daily reconciliation status |
+## 8. Naming conventions
 
-**Export for version control:** Dashboard JSON export lưu vào `metabase/dashboards/` — reproducible khi setup môi trường mới.
-
-## 7. Naming conventions
-
-- **Table:** snake_case, prefix theo layer (`stg_`, `dim_`, `fct_`, `mart_`)
-- **Column:** snake_case, đơn vị trong tên (`weight_kg`, `cod_amount_vnd`, `delivery_hours`)
-- **Date:** `created_at` (timestamp), `dt` (date string `YYYY-MM-DD` cho partition)
-- **Boolean:** `is_*` (vd `is_delivered`, `is_sla_breach`)
-- **Foreign key:** `<dim>_id` (vd `hub_id`, `customer_id`)
-
-## 8. Performance budget
-
-| Component | Target |
-|---|---|
-| Generate 5M shipments | < 5 phút |
-| Load raw → DuckDB | < 30 giây |
-| dbt full refresh | < 2 phút |
-| Metabase dashboard load | < 2 giây (query mart tables trực tiếp) |
-| Metabase container | ~512MB RAM |
+- **Table prefix:** `stg_` (staging) · `dim_` · `fct_` · `mart_` · `snap_` · `seed_`
+- **Column:** snake_case · units in name (`weight_gram`, `cod_amount_vnd`, not yet enforced everywhere)
+- **Date column:** `created_at` (timestamp) · `dt` (DATE partition) · `week_start` (mart partition)
+- **Boolean:** `is_delivered`, `is_sla_breach`, `is_b2b`, `is_settled`
+- **FK:** `<dim>_id` → `warehouse_id`, `client_id`, `shipper_id`, `province_id`, `district_id`, `date_id`
+- **Dirty flag:** `_data_quality` → `clean` / `light_issue` / `heavy_issue`

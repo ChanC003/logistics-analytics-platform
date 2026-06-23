@@ -1,0 +1,9 @@
+FROM airflow-custom:2.9.3
+
+USER airflow
+
+# Install dbt-duckdb into Airflow's virtualenv at /home/airflow/.local
+RUN /home/airflow/.local/bin/pip install --no-cache-dir \
+    "dbt-duckdb==1.7.5" \
+    "duckdb==1.1.3" \
+    "pyarrow==17.0.0"

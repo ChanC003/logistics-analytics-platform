@@ -1,0 +1,5 @@
+service_code,service_label_vn,sla_target_hours,region_scope
+TC1,Tiêu chuẩn nội vùng,48,intra_region
+TC2,Tiêu chuẩn liên vùng,72,inter_region
+EXP,Hỏa tốc,24,intra_region
+ECO,Tiết kiệm,96,inter_region

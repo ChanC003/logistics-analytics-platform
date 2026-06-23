@@ -28,6 +28,12 @@ airflow.cfg
 .env
 *.env
 
+# Metabase — driver JARs are large binaries (285MB+), download separately (see docs/setup.md)
+metabase/plugins/
+# Metabase runtime DB
+metabase/metabase.db*
+metabase/metabase.db.mv.db
+
 # OS
 .DS_Store
 Thumbs.db

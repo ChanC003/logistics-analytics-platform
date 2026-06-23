@@ -1,0 +1,124 @@
+version: 2
+
+models:
+  # ---------- DIMENSIONS ----------
+  - name: stg_province
+    description: "Clean dim_province — 63 tỉnh."
+    columns:
+      - name: province_id
+        data_tests: [not_null, unique]
+      - name: region
+        data_tests:
+          - accepted_values:
+              values: ['Miền Bắc', 'Miền Trung', 'Miền Nam', 'Tây Nguyên']
+
+  - name: stg_district
+    description: "Clean dim_district — 711 quận/huyện."
+    columns:
+      - name: district_id
+        data_tests: [not_null, unique]
+      - name: province_id
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_province')
+              field: province_id
+
+  - name: stg_date
+    description: "Clean dim_date — 731 ngày."
+    columns:
+      - name: date_id
+        data_tests: [not_null, unique]
+      - name: date_day
+        data_tests: [not_null]
+
+  - name: stg_warehouse
+    description: "Clean dim_warehouse — district_id DOUBLE→BIGINT, bỏ cột denormalized NULL."
+    columns:
+      - name: warehouse_id
+        data_tests: [not_null, unique]
+      - name: province_id
+        data_tests:
+          - relationships:
+              to: ref('stg_province')
+              field: province_id
+      # district_id có NULL hợp lệ (dirty warehouse thiếu district) → KHÔNG not_null
+
+  - name: stg_client
+    description: "Clean dim_client — loại heavy_issue."
+    columns:
+      - name: client_id
+        data_tests: [not_null, unique]
+      - name: province_id
+        data_tests:
+          - relationships:
+              to: ref('stg_province')
+              field: province_id
+
+  - name: stg_shipper
+    description: "Clean dim_shipper — plate chuẩn hoá, future hire_date → NULL + cờ."
+    columns:
+      - name: shipper_id
+        data_tests: [not_null, unique]
+      - name: performance_tier
+        data_tests:
+          - accepted_values:
+              values: ['A', 'B', 'C']
+      - name: warehouse_id
+        data_tests:
+          - relationships:
+              to: ref('stg_warehouse')
+              field: warehouse_id
+
+  # ---------- FACTS ----------
+  - name: stg_shippingorder
+    description: "Clean data_shippingorder_now — DEDUP order_code, normalize enum, loại heavy_issue."
+    columns:
+      - name: order_code
+        description: "PK sau dedup."
+        data_tests: [not_null, unique]
+      - name: status
+        data_tests:
+          - accepted_values:
+              values: ['delivered', 'return_to_sender', 'cancelled', 'ready_to_pick', 'picking', 'in_transit', 'delivering']
+      - name: outcome_group
+        data_tests:
+          - accepted_values:
+              values: ['success', 'return', 'cancelled', 'in_progress']
+      - name: client_id
+        data_tests:
+          - relationships:
+              to: ref('stg_client')
+              field: client_id
+
+  - name: stg_inside_history
+    description: "Clean data_inside_history (41M) — warehouse DOUBLE→BIGINT, dt→DATE."
+    columns:
+      - name: package_code
+        data_tests: [not_null]
+      - name: order_code
+        data_tests: [not_null]
+
+  - name: stg_transportation
+    description: "Clean data_transportation — truck trip 'T', from/to DOUBLE→BIGINT."
+    columns:
+      - name: trip_code
+        data_tests: [not_null, unique]
+
+  - name: stg_shipment
+    description: "Clean data_shipment — lastmile trip 'L', deliver_warehouse DOUBLE→BIGINT."
+    columns:
+      - name: order_code
+        data_tests: [not_null]
+      - name: attempt_status
+        data_tests:
+          - accepted_values:
+              values: ['success', 'failed', 'pending', 'in_progress', 'cancelled']
+
+  - name: stg_cod
+    description: "Clean data_cod — amount DOUBLE→BIGINT VND, dt→DATE."
+    columns:
+      - name: cod_id
+        data_tests: [not_null, unique]
+      - name: order_code
+        data_tests: [not_null]

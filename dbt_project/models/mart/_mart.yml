@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: mart_daily_kpi
+    description: "KPI ngày × vùng: total/success/return/SLA/COD/leadtime."
+    columns:
+      - name: success_rate_pct
+        description: "delivered / total × 100."
+      - name: date_id
+        data_tests: [not_null]
+
+  - name: mart_hub_performance
+    description: "Hiệu suất từng kho giao — rank theo success/SLA/năng suất."
+    columns:
+      - name: warehouse_id
+        data_tests: [not_null, unique]
+
+  - name: mart_sla_breakdown
+    description: "SLA theo tuần × vùng × dịch vụ — breach rate + p50/p90 leadtime."
+
+  - name: mart_failure_reasons
+    description: "Top lý do giao thất bại theo vùng (attempt-level)."
+
+  - name: mart_cod_reconciliation
+    description: "Đối soát COD theo tuần × vùng — phải thu vs đã thu, chênh lệch."
+    columns:
+      - name: collection_rate_pct
+        description: "collected / cod_amount × 100."

@@ -1,23 +1,121 @@
-version: '3.8'
+name: logistics
+
+# =============================================================================
+# 02-Logistics Analytics Platform -- Full stack
+# Usage: cd docker && docker compose up -d
+# Ports: Airflow :8080  |  Metabase :3000
+# Pre-req: data/warehouse.duckdb must exist (run dbt build first, or see README)
+# =============================================================================
+
+x-airflow-common: &airflow-common
+  image: logistics-airflow:2.9.3
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
+    AIRFLOW__CORE__FERNET_KEY: 'change-me-in-production-32-chars-key=='
+    AIRFLOW__WEBSERVER__SECRET_KEY: 'change-me-in-production'
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
+    # dbt needs these at runtime inside containers
+    DBT_PROFILES_DIR: /opt/airflow/dbt_project
+    PYTHONUTF8: '1'
+  volumes:
+    - ../airflow/dags:/opt/airflow/dags:ro
+    - ../dbt_project:/opt/airflow/dbt_project
+    - ../data:/opt/airflow/data
+    - airflow-logs:/opt/airflow/logs
+  depends_on:
+    airflow-db:
+      condition: service_healthy
 
 services:
-  airflow:
-    image: apache/airflow:2.9.3
+  # ---------------------------------------------------------------------------
+  # Airflow metadata DB (PostgreSQL)
+  # ---------------------------------------------------------------------------
+  airflow-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
     volumes:
-      - ../airflow/dags:/opt/airflow/dags
-      - ../data:/opt/airflow/data
-      - ../dbt_project:/opt/airflow/dbt_project
+      - airflow-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U airflow -d airflow']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Airflow DB init (one-shot: create tables + admin user)
+  # ---------------------------------------------------------------------------
+  airflow-init:
+    <<: *airflow-common
+    restart: on-failure
+    command: bash -c "airflow db migrate && (airflow users create --username admin --firstname Chang --lastname PH --role Admin --email admin@logistics.local --password admin || true)"
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Airflow webserver  ->  http://localhost:8080  (admin/admin)
+  # ---------------------------------------------------------------------------
+  airflow-webserver:
+    <<: *airflow-common
+    restart: unless-stopped
+    command: webserver
     ports:
       - '8080:8080'
-    command: webserver
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', 'http://localhost:8080/health']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
 
+  # ---------------------------------------------------------------------------
+  # Airflow scheduler
+  # ---------------------------------------------------------------------------
+  airflow-scheduler:
+    <<: *airflow-common
+    restart: unless-stopped
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ---------------------------------------------------------------------------
+  # Metabase  ->  http://localhost:3000
+  # DuckDB driver: MotherDuck 0.3.0 (requires Metabase >= 0.52.9, glibc-based image)
+  # warehouse.duckdb mounted read-only at /data/warehouse.duckdb
+  # Connect: Add database -> DuckDB -> database_file=/data/warehouse.duckdb
+  # ---------------------------------------------------------------------------
   metabase:
-    image: metabase/metabase:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.metabase
+    image: logistics-metabase:0.52.9
+    restart: unless-stopped
     ports:
       - '3000:3000'
+    environment:
+      MB_DB_TYPE: h2
+      JAVA_OPTS: '-Xmx1g'
     volumes:
-      - ../metabase:/metabase-data
+      - ../metabase/plugins:/app/plugins
+      - ../metabase/dashboards:/metabase-data
+      - ../data/warehouse.duckdb:/data/warehouse.duckdb
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', 'http://localhost:3000/api/health']
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+
+volumes:
+  airflow-db-data:
+  airflow-logs:

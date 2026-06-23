@@ -1,0 +1,115 @@
+version: 2
+
+models:
+  # ---------- DIMENSIONS ----------
+  - name: dim_province
+    description: "63 tỉnh + region."
+    columns:
+      - name: province_id
+        data_tests: [not_null, unique]
+
+  - name: dim_district
+    description: "711 quận/huyện + province_name/region denormalized."
+    columns:
+      - name: district_id
+        data_tests: [not_null, unique]
+      - name: province_id
+        data_tests:
+          - relationships:
+              to: ref('dim_province')
+              field: province_id
+
+  - name: dim_date
+    description: "731 ngày + week_start cho mart."
+    columns:
+      - name: date_id
+        data_tests: [not_null, unique]
+
+  - name: dim_warehouse
+    description: "2,000 kho — province_name/region fill từ dim_province."
+    columns:
+      - name: warehouse_id
+        data_tests: [not_null, unique]
+
+  - name: dim_client
+    description: "50k client + client_channel (marketplace/sme/tts)."
+    columns:
+      - name: client_id
+        data_tests: [not_null, unique]
+      - name: client_channel
+        data_tests:
+          - accepted_values:
+              values: ['marketplace', 'sme', 'tts', 'other']
+
+  - name: dim_shipper
+    description: "1,500 shipper + tenure_days."
+    columns:
+      - name: shipper_id
+        data_tests: [not_null, unique]
+      - name: warehouse_id
+        data_tests:
+          - relationships:
+              to: ref('dim_warehouse')
+              field: warehouse_id
+
+  # ---------- FACTS ----------
+  - name: fct_shipping_order
+    description: "Fact đơn hàng (grain order_code). 5M sau dedup."
+    columns:
+      - name: order_code
+        data_tests: [not_null, unique]
+      - name: client_id
+        data_tests:
+          - relationships:
+              to: ref('dim_client')
+              field: client_id
+      - name: date_id
+        data_tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_id
+      - name: outcome_group
+        data_tests:
+          - accepted_values:
+              values: ['success', 'return', 'cancelled', 'in_progress']
+
+  - name: fct_inside_history
+    description: "Fact package event (grain event). 41M rows."
+    columns:
+      - name: order_code
+        data_tests: [not_null]
+      - name: package_code
+        data_tests: [not_null]
+
+  - name: fct_transportation
+    description: "Fact line-haul trip (grain trip_code 'T')."
+    columns:
+      - name: trip_code
+        data_tests: [not_null, unique]
+      - name: driver_shipper_id
+        data_tests:
+          - relationships:
+              to: ref('dim_shipper')
+              field: shipper_id
+
+  - name: fct_shipment
+    description: "Fact lastmile attempt (grain attempt)."
+    columns:
+      - name: order_code
+        data_tests: [not_null]
+      - name: shipper_id
+        data_tests:
+          - relationships:
+              to: ref('dim_shipper')
+              field: shipper_id
+
+  - name: fct_cod
+    description: "Fact đối soát COD (grain cod_id)."
+    columns:
+      - name: cod_id
+        data_tests: [not_null, unique]
+      - name: warehouse_id
+        data_tests:
+          - relationships:
+              to: ref('dim_warehouse')
+              field: warehouse_id

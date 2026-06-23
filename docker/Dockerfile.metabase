@@ -1,0 +1,29 @@
+# Metabase on Ubuntu (glibc) so DuckDB JNI native lib loads correctly.
+# Alpine-based metabase/metabase image lacks glibc symbols (__res_init, backtrace, malloc_trim).
+FROM eclipse-temurin:21-jre-jammy
+
+ENV FC_LANG=en-US LC_CTYPE=en_US.UTF-8
+ENV MB_DB_TYPE=h2
+ENV JAVA_OPTS="-Xmx1g -Djava.awt.headless=true"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    fontconfig \
+    fonts-noto \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Download Metabase v0.52.9 JAR
+RUN curl -L -o metabase.jar \
+    "https://downloads.metabase.com/v0.52.9/metabase.jar"
+
+# Plugin dir — driver JAR will be mounted here
+RUN mkdir -p /plugins && chmod 777 /plugins
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=10 --start-period=90s \
+    CMD curl -f http://localhost:3000/api/health || exit 1
+
+CMD ["sh", "-c", "java ${JAVA_OPTS} -jar /app/metabase.jar"]

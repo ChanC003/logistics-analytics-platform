@@ -1,0 +1,64 @@
+version: 2
+
+# Nguồn = 11 parquet trong data/raw. dbt-duckdb đọc trực tiếp parquet qua
+# external_location (read_parquet). Path relative tới CWD chạy dbt (dbt_project/).
+sources:
+  - name: raw
+    description: "Raw synthetic GHN-style data — CỐ Ý bẩn (dirty taxonomy 3 tầng). Staging chịu trách nhiệm clean."
+    meta:
+      external_location: "read_parquet('../data/raw/{name}.parquet')"
+    tables:
+      # ---- Dimensions ----
+      - name: dim_province
+        description: "63 tỉnh thành VN."
+        columns:
+          - name: province_id
+            description: "PK."
+            data_tests: [not_null, unique]
+      - name: dim_district
+        description: "711 quận/huyện. FK province_id."
+        columns:
+          - name: district_id
+            data_tests: [not_null, unique]
+      - name: dim_date
+        description: "731 ngày 2024–2025. PK date_id (YYYYMMDD)."
+        columns:
+          - name: date_id
+            data_tests: [not_null, unique]
+      - name: dim_warehouse
+        description: "2,000 kho (KTC/BC). Dirty: district_id DOUBLE có NULL, province_name/region_fullname NULL."
+        columns:
+          - name: warehouse_id
+            data_tests: [not_null, unique]
+      - name: dim_client
+        description: "50,000 client/shop. Dirty light_issue ~1%."
+        columns:
+          - name: client_id
+            data_tests: [not_null, unique]
+      - name: dim_shipper
+        description: "1,500 shipper, 3 tier A/B/C. Dirty plate format, future hire_date."
+        columns:
+          - name: shipper_id
+            data_tests: [not_null, unique]
+
+      # ---- Facts ----
+      - name: data_shippingorder_now
+        description: "5M đơn hàng. order_code có 2,562 dup CỐ Ý (dirty S9) — staging dedup."
+        columns:
+          - name: order_code
+            description: "PK ở core sau dedup (raw có dup cố ý → KHÔNG test unique ở source)."
+            data_tests: [not_null]
+      - name: data_inside_history
+        description: "41M package events. warehouse_id/from/to DOUBLE nullable; dt VARCHAR."
+      - name: data_transportation
+        description: "4.2M truck trip (line-haul). PK trip_code prefix 'T'. from_warehouse_id NULL được."
+        columns:
+          - name: trip_code
+            data_tests: [not_null]
+      - name: data_shipment
+        description: "6.1M lastmile attempt. trip_code prefix 'L' (KHÁC transportation 'T')."
+      - name: data_cod
+        description: "3M bản ghi COD. PK cod_id; discrepancy_amount = collected - cod."
+        columns:
+          - name: cod_id
+            data_tests: [not_null, unique]

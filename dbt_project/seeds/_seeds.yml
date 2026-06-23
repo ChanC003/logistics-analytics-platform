@@ -1,0 +1,20 @@
+version: 2
+
+seeds:
+  - name: seed_status_mapping
+    description: "Map status đơn → nhãn tiếng Việt + outcome_group chuẩn (reference)."
+    config:
+      column_types:
+        is_terminal: boolean
+    columns:
+      - name: status
+        data_tests: [not_null, unique]
+
+  - name: seed_sla_threshold
+    description: "Ngưỡng SLA (giờ) theo loại dịch vụ — reference cho mart SLA."
+    config:
+      column_types:
+        sla_target_hours: integer
+    columns:
+      - name: service_code
+        data_tests: [not_null, unique]

@@ -3,25 +3,26 @@
 ## Quick Start (3 steps)
 
 ```bash
-# 1. Clone & generate data (one-time)
-git clone <repo>
-cd 02-Logistics-Analytics-Platform
+# 1. Clone & generate data (one-time, ~52 min)
+git clone https://github.com/ChanC003/logistics-analytics-platform.git
+cd logistics-analytics-platform
 python -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
-python src/generators/generate_all.py --seed 42   # ~52 min, 59M rows
+python src/generators/generate_all.py --seed 42
 
-# 2. Build dbt models (writes warehouse.duckdb)
+# 2. Build dbt models (writes warehouse.duckdb, ~2 min)
 cd dbt_project
-dbt deps && dbt seed && dbt run && dbt test       # ~2 min after data exists
+dbt deps && dbt seed && dbt run && dbt test
 
-# 3. Start full stack
+# 3. Start full stack (Airflow + Metabase)
 cd ..\docker
 docker compose up -d
 ```
 
-Services:
-- **Airflow**: http://localhost:8080 (admin / admin)
-- **Metabase**: http://localhost:3000
+| Service | URL | Credentials |
+|---|---|---|
+| Airflow | http://localhost:8080 | admin / admin |
+| Metabase | http://localhost:3000 | admin@logistics.local / admin1234! |
 
 ---
 
@@ -31,17 +32,8 @@ Services:
 |---|---|---|
 | Python | 3.11+ | For generator + dbt |
 | Docker Desktop | 4.x | Must be running |
-| RAM | 16 GB+ | For 59M-row generation |
-| Disk | 15 GB+ | Raw parquet (~2.7 GB) + DuckDB (~5 GB) |
-
-### Python environment
-
-```powershell
-cd f:\ChangPH-project\02-Logistics-Analytics-Platform
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
+| RAM | 16 GB+ | 59M-row generation peak |
+| Disk | 15 GB+ | Raw parquet (~2.7 GB) + DuckDB (~5.1 GB) + Docker images (~3 GB) |
 
 ---
 
@@ -52,7 +44,7 @@ $env:PYTHONUTF8 = "1"
 python src/generators/generate_all.py --seed 42
 ```
 
-Output: 11 parquet files in `data/raw/` (~2.7 GB total):
+Output: 11 parquet files in `data/raw/` (~2.7 GB):
 
 | File | Rows |
 |---|---|
@@ -62,8 +54,9 @@ Output: 11 parquet files in `data/raw/` (~2.7 GB total):
 | data_shipment.parquet | 6,149,237 |
 | data_cod.parquet | 3,033,008 |
 | 6 dim files | 55,005 |
+| **Total** | **59,441,787** |
 
-> Same seed = same data. `--seed 42` is reproducible.
+> Same seed = same dataset. `data/raw/` is gitignored — regenerate if missing.
 
 ---
 
@@ -72,47 +65,62 @@ Output: 11 parquet files in `data/raw/` (~2.7 GB total):
 ```powershell
 $env:PYTHONUTF8 = "1"
 cd dbt_project
-$env:DBT_PROFILES_DIR = (Get-Location).Path
 
 # Install dbt packages (dbt_utils)
-..\.venv\Scripts\dbt.exe deps
+dbt deps --profiles-dir .
 
 # Load seed tables (status mapping, SLA thresholds)
-..\.venv\Scripts\dbt.exe seed --profiles-dir .
+dbt seed --profiles-dir .
 
-# Build all models: staging -> core -> mart
-..\.venv\Scripts\dbt.exe run --profiles-dir .
+# Build all models: staging -> core -> mart (~2 min)
+dbt run --profiles-dir .
 
 # Run 89 data quality tests (88 PASS / 1 WARN expected)
-..\.venv\Scripts\dbt.exe test --profiles-dir .
+dbt test --profiles-dir .
 
-# SCD2 snapshot of client tier changes
-..\.venv\Scripts\dbt.exe snapshot --profiles-dir .
+# SCD2 snapshot of client tier
+dbt snapshot --profiles-dir .
 ```
 
-Output: `data/warehouse.duckdb` (~5 GB) with schemas:
-- `main_staging` — 11 views (cleaned raw data)
-- `main_core` — 11 tables (6 dim + 5 fact, 58M+ rows)
-- `main_mart` — 5 tables (pre-aggregated for dashboards)
-- `snapshot` — 1 SCD2 snapshot (snap_client_tier)
-- `main_seed` — 2 seed tables
+Output: `data/warehouse.duckdb` (~5.1 GB):
 
-> **Note on dbt version**: This project uses dbt-duckdb 1.7.5 + dbt-core 1.7.19
-> installed via `pipx` at `C:/Users/ADMIN/pipx/venvs/dbt-core/`.
-> The `.venv` in the project has dbt-duckdb 1.8.4 (also works).
+| Schema | Contents |
+|---|---|
+| `main_staging` | 11 views — cleaned + cast + deduped raw data |
+| `main_core` | 11 tables — 6 dim + 5 fact (58M+ rows) |
+| `main_mart` | 5 tables — pre-aggregated for dashboards |
+| `snapshot` | snap_client_tier (SCD2) |
+| `main_seed` | seed_status_mapping, seed_sla_threshold |
 
 ---
 
-## Step 3 — Build Docker image + start stack
+## Step 3 — Build Docker images + start stack
 
-### One-time: build custom Airflow image
+### One-time: build custom images
 
 ```bash
 cd docker
+
+# Airflow image with dbt-duckdb 1.7.5 + duckdb 1.1.3
 docker build -f Dockerfile.airflow -t logistics-airflow:2.9.3 .
+
+# Metabase image on Ubuntu/glibc base (required for DuckDB JNI compatibility)
+docker build -f Dockerfile.metabase -t logistics-metabase:0.52.9 .
 ```
 
-> Installs dbt-duckdb 1.7.5 + duckdb 1.1.3 + pyarrow 17.0.0 into the Airflow container.
+> **Why custom Metabase image?** The official `metabase/metabase` uses Alpine Linux (musl libc).
+> The MotherDuck DuckDB JDBC driver requires glibc symbols (`__res_init`, `backtrace`).
+> This image uses `eclipse-temurin:21-jre-jammy` (Ubuntu 22.04) as base.
+
+### Download DuckDB driver
+
+```bash
+# MotherDuck DuckDB driver v0.3.0 (requires Metabase >= 0.52.9)
+curl -L -o metabase/plugins/duckdb.metabase-driver.jar \
+  "https://github.com/motherduckdb/metabase_duckdb_driver/releases/download/0.3.0/duckdb.metabase-driver.jar"
+```
+
+> Driver is ~73 MB — gitignored, must download before starting Metabase.
 
 ### Start full stack
 
@@ -121,15 +129,15 @@ cd docker
 docker compose up -d
 ```
 
-Wait ~60s for all services to become healthy, then check:
+Wait ~90s for Metabase to start, then check:
 
 ```bash
 docker compose ps
 # Expected:
 # logistics-airflow-db-1          healthy
-# logistics-airflow-webserver-1   healthy
+# logistics-airflow-webserver-1   healthy   0.0.0.0:8080->8080/tcp
 # logistics-airflow-scheduler-1   up
-# logistics-metabase-1            healthy
+# logistics-metabase-1            healthy   0.0.0.0:3000->3000/tcp
 ```
 
 ---
@@ -137,36 +145,44 @@ docker compose ps
 ## Step 4 — Trigger Airflow DAG
 
 1. Open http://localhost:8080 (admin / admin)
-2. Enable DAG `logistics_daily` (toggle in UI)
-3. Click "Trigger DAG" to run manually
+2. Enable DAG `logistics_daily` (toggle in list)
+3. Click **Trigger DAG** to run manually
 
-**Expected result** (~3 minutes total):
-```
-dbt_seed      success  14s
-dbt_run       success  111s
-dbt_test      success  17s
-dbt_snapshot  success  15s
-quality_check success  1s
-```
+Expected result (~3 min total):
+
+| Task | Status | Duration |
+|---|---|---|
+| dbt_seed | success | 14s |
+| dbt_run | success | 111s |
+| dbt_test | success | 17s |
+| dbt_snapshot | success | 15s |
+| quality_check | success | 1s |
 
 ---
 
-## Step 5 — Connect Metabase to DuckDB
+## Step 5 — Metabase dashboards
 
-1. Open http://localhost:3000
-2. Complete initial setup (create admin account)
-3. **Add database:**
-   - Database type: **DuckDB**
-   - Display name: `Logistics Warehouse`
-   - File path: `/data/warehouse.duckdb`
-   - Click "Save"
+Metabase starts pre-configured with 4 dashboards querying mart tables directly.
 
-4. Metabase will scan the schema. Browse mart tables:
-   - `main_mart.mart_daily_kpi` (2,924 rows)
-   - `main_mart.mart_hub_performance` (1,992 rows)
-   - `main_mart.mart_sla_breakdown` (3,960 rows)
-   - `main_mart.mart_failure_reasons` (25 rows)
-   - `main_mart.mart_cod_reconciliation` (550 rows)
+Login at http://localhost:3000:
+- **Email:** `admin@logistics.local`
+- **Password:** `admin1234!`
+
+> **First-time setup:** On a fresh container, Metabase needs initial setup via API
+> (creates admin user + connects DuckDB). Run the setup script:
+> ```bash
+> python docs/metabase_setup.py
+> ```
+> Or follow manual steps in the Troubleshooting section below.
+
+Navigate to **Collections → Logistics Analytics Platform → Dashboard**:
+
+| Dashboard | Tab | Source table |
+|---|---|---|
+| Logistics Analytics Platform | KPI Overview | mart_daily_kpi |
+| | Hub Performance | mart_hub_performance |
+| | SLA Analysis | mart_sla_breakdown + mart_failure_reasons |
+| | COD Reconciliation | mart_cod_reconciliation |
 
 ---
 
@@ -175,58 +191,96 @@ quality_check success  1s
 | Service | Image | Port | Purpose |
 |---|---|---|---|
 | airflow-db | postgres:16-alpine | internal | Airflow metadata DB |
+| airflow-init | logistics-airflow:2.9.3 | — | One-shot DB migrate + admin user |
 | airflow-webserver | logistics-airflow:2.9.3 | 8080 | Airflow UI |
-| airflow-scheduler | logistics-airflow:2.9.3 | — | DAG scheduler |
-| metabase | metabase/metabase:v0.49.21 | 3000 | BI dashboard |
+| airflow-scheduler | logistics-airflow:2.9.3 | — | DAG scheduler (LocalExecutor) |
+| metabase | logistics-metabase:0.52.9 | 3000 | Metabase BI (custom Ubuntu image) |
 
-Volumes:
-- `../data` mounted into Airflow containers as `/opt/airflow/data`
-- `../dbt_project` mounted as `/opt/airflow/dbt_project`
-- `../data/warehouse.duckdb` mounted read-only into Metabase as `/data/warehouse.duckdb`
-- `../metabase/plugins/duckdb.metabase-driver.jar` provides DuckDB JDBC driver
+**Volume mounts:**
+- `../data` → `/opt/airflow/data` (Airflow reads/writes DuckDB)
+- `../dbt_project` → `/opt/airflow/dbt_project` (writable — dbt writes logs)
+- `../data/warehouse.duckdb` → `/data/warehouse.duckdb` (Metabase, writable — DuckDB needs write lock)
+- `../metabase/plugins` → `/app/plugins` (Metabase plugin scan path)
 
 ---
 
 ## Troubleshooting
 
-### dbt Power User extension shows red in VS Code
+### DAG paused on first start
+
+DAG `logistics_daily` is paused by default. Unpause:
+```bash
+docker compose exec airflow-scheduler airflow dags unpause logistics_daily
+```
+
+### dbt KeyError / partial_parse cache
+
+`--no-partial-parse` flag is already set in the DAG. If issue persists locally:
+```bash
+rm dbt_project/target/partial_parse.msgpack
+```
+
+### DuckDB file locked
+
+Only one write connection allowed at a time.
+Do not run `dbt run` locally while the Airflow DAG is running.
+`quality_check` uses read-only connection — safe to run concurrently with a reader.
+
+### Metabase DuckDB driver not registered
+
+```bash
+docker compose logs metabase | grep -i duckdb
+# Expected: "Registered driver :duckdb"
+```
+
+If missing, verify driver file exists:
+```bash
+ls -lh metabase/plugins/duckdb.metabase-driver.jar
+# Should be ~73 MB (MotherDuck v0.3.0)
+```
+
+If file missing, re-download (see Step 3).
+
+### Metabase: "Cannot open file: Read-only file system"
+
+The `warehouse.duckdb` mount must be **writable** (no `:ro`).
+Check `docker/docker-compose.yml` — the mount should be:
+```yaml
+- ../data/warehouse.duckdb:/data/warehouse.duckdb   # no :ro
+```
+
+### Metabase first-time setup (manual)
+
+If the container started fresh with no prior setup:
+```bash
+# 1. Get setup token
+SETUP_TOKEN=$(curl -s http://localhost:3000/api/session/properties | python3 -c "import sys,json; print(json.load(sys.stdin)['setup-token'])")
+
+# 2. Create admin user
+curl -s -X POST http://localhost:3000/api/setup \
+  -H "Content-Type: application/json" \
+  -d "{\"token\":\"$SETUP_TOKEN\",\"prefs\":{\"site_name\":\"Logistics Analytics Platform\",\"allow_tracking\":false},\"user\":{\"first_name\":\"Chang\",\"last_name\":\"PH\",\"email\":\"admin@logistics.local\",\"password\":\"admin1234!\",\"site_name\":\"Logistics\"}}"
+
+# 3. Login + add DuckDB database
+SESSION=$(curl -s -X POST http://localhost:3000/api/session -H "Content-Type: application/json" -d '{"username":"admin@logistics.local","password":"admin1234!"}')
+TOKEN=$(echo $SESSION | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+curl -s -X POST http://localhost:3000/api/database \
+  -H "X-Metabase-Session: $TOKEN" -H "Content-Type: application/json" \
+  -d '{"engine":"duckdb","name":"Logistics Warehouse","details":{"database_file":"/data/warehouse.duckdb"}}'
+```
+
+Then import dashboard JSON exports from `metabase/dashboards/`.
+
+### dbt Power User VS Code extension shows errors
 
 The extension uses cp1252 encoding. All YAML config files must be pure ASCII.
-Fixed in `profiles.yml` and `dbt_project.yml` — no Vietnamese characters in comments.
+`profiles.yml` and `dbt_project.yml` already contain no Vietnamese characters.
 
 VS Code settings (`.vscode/settings.json`):
 ```json
 {
   "dbt.dbtPythonPathOverride": "C:/Users/ADMIN/pipx/venvs/dbt-core/Scripts/python.exe",
-  "dbt.profilesDirOverride": "${workspaceFolder}/02-Logistics-Analytics-Platform/dbt_project"
+  "dbt.profilesDirOverride": "${workspaceFolder}/dbt_project"
 }
-```
-
-### DAG stuck in queue
-
-The `logistics_daily` DAG is paused by default. Unpause it:
-```bash
-docker compose exec airflow-scheduler airflow dags unpause logistics_daily
-```
-
-### dbt KeyError in container
-
-Add `--no-partial-parse` flag (already set in DAG). If issue persists:
-```bash
-docker compose exec airflow-scheduler rm -f /opt/airflow/dbt_project/target/partial_parse.msgpack
-```
-
-### DuckDB file locked
-
-DuckDB allows multiple read-only connections but only one write connection.
-The DAG connects read-only for quality_check; dbt_run connects read-write.
-Do not run dbt locally while the Airflow DAG is running.
-
-### Metabase DuckDB driver not loaded
-
-Check logs: `docker compose logs metabase | grep duckdb`
-Expected: `Registered driver :duckdb`. If missing, verify the jar exists:
-```bash
-ls metabase/plugins/duckdb.metabase-driver.jar
-# Should be ~58 MB (AlexR2D2/metabase_duckdb_driver v0.2.3)
 ```

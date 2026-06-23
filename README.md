@@ -11,8 +11,8 @@ End-to-end analytics platform simulating a Vietnamese 3PL network — 59M synthe
 | 1 | Data generation (59M rows, 11 parquet) | COMPLETE |
 | 2 | DuckDB + dbt (88 PASS / 1 WARN / 0 ERROR) | COMPLETE |
 | 3 | Airflow DAG (5/5 tasks success, ~3 min) | COMPLETE |
-| 4 | Metabase (DuckDB driver, port 3000) | COMPLETE |
-| 5 | Docs + demo-ready | IN PROGRESS |
+| 4 | Metabase (4 dashboards, 4 tabs, DuckDB live) | COMPLETE |
+| 5 | Docs + demo-ready | COMPLETE |
 
 ---
 
@@ -36,7 +36,7 @@ docker compose up -d
 | Service | URL | Credentials |
 |---|---|---|
 | Airflow | http://localhost:8080 | admin / admin |
-| Metabase | http://localhost:3000 | setup on first visit |
+| Metabase | http://localhost:3000 | admin@logistics.local / admin1234! |
 
 Full guide: [docs/setup.md](docs/setup.md)
 
@@ -208,3 +208,12 @@ Dashboard JSON exports: `metabase/dashboards/`
 - **data_transportation volume**: 4.19M rows vs 500k target — long-tail distribution.
   Most trips have 1–2 packages (small BC routes); only hub-to-hub routes reach 20 packages/trip.
   This reflects real logistics network behavior, not a generator bug.
+
+- **Metabase DuckDB driver (gitignored, 73 MB)**: `metabase/plugins/` is excluded from git.
+  Download `duckdb.metabase-driver.jar` from
+  [MotherDuck releases v0.3.0](https://github.com/motherduckdb/metabase_duckdb_driver/releases/tag/0.3.0)
+  and place in `metabase/plugins/` before `docker compose up`.
+
+- **Metabase custom image required**: the official `metabase/metabase` image (Alpine/musl) cannot
+  load the DuckDB JNI driver. `Dockerfile.metabase` builds on `eclipse-temurin:21-jre-jammy`
+  (Ubuntu 22.04, glibc) to resolve missing symbols (`__res_init`, `backtrace`, `malloc_trim`).

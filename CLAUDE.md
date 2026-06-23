@@ -7,9 +7,9 @@ Hướng dẫn riêng cho Claude khi làm việc trong project **02 — Logistic
 ## 1. Bối cảnh project
 
 - **Mục tiêu:** Demo end-to-end data platform — synthetic data → DuckDB → dbt → Airflow → Metabase
-- **Tagline:** "5M+ rows on DuckDB, orchestrated by Airflow, visualized by Metabase"
+- **Tagline:** "59M synthetic rows → DuckDB → dbt → Airflow → Metabase dashboards in one docker-compose"
 - **Stakeholder:** Recruiter chạy `docker-compose up` — Metabase self-hosted tại `localhost:3000`
-- **Trạng thái:** Phase 0 xong (scaffolding), đang chuẩn bị Phase 1 (Data generation) — xem [processing.md](processing.md)
+- **Trạng thái:** Hoàn thành 5/5 phase — xem [processing.md](processing.md)
 
 ## 2. Stack & Convention
 
@@ -62,11 +62,14 @@ Kế thừa [`sql-style.md`](C:/Users/ADMIN/.claude/rules/sql-style.md), thêm:
 
 ## 6. Quy ước Metabase
 
-- **Deployment:** Docker image `metabase/metabase:latest`, port `3000`
-- **DuckDB connector:** community driver `metabase-duckdb-driver.jar` — mount vào `/plugins/`
-- **Volume mount:** `data/warehouse.duckdb` → `/data/warehouse.duckdb` (read-only)
-- **Dashboard exports:** JSON export lưu vào `metabase/dashboards/` — version control được
-- **4 dashboard bắt buộc:** KPI Overview / Hub Performance / SLA Analysis / COD Reconciliation
+- **Deployment:** Custom Docker image `logistics-metabase:0.52.9` (Ubuntu/glibc — `eclipse-temurin:21-jre-jammy`), port `3000`
+  - Official Alpine image không dùng được — DuckDB JNI cần glibc (`__res_init`, `backtrace`, `malloc_trim`)
+- **DuckDB driver:** MotherDuck driver v0.3.0 (`duckdb.metabase-driver.jar`, ~73MB) — mount vào `/app/plugins/` (KHÔNG phải `/plugins/`)
+  - Driver gitignored — download thủ công từ MotherDuck releases trước khi `docker compose up`
+- **Volume mount:** `data/warehouse.duckdb` → `/data/warehouse.duckdb` — **KHÔNG** dùng `:ro` (DuckDB driver cần write lock)
+- **Dashboard:** 1 dashboard 4 tabs (KPI Overview / Hub Performance / SLA Analysis / COD Reconciliation), tổ chức trong collection 3 tầng (root → Dashboard/Question/Source)
+- **Credentials:** `admin@logistics.local` / `admin1234!`
+- **Metabase H2 reset mỗi khi restart container** — nếu mất data, chạy lại setup flow (xem docs/setup.md troubleshooting)
 - **Metabase không tự sinh data** — phải chạy generator + dbt trước, sau đó Metabase tự query mart tables
 
 ## 7. File analysis bắt buộc

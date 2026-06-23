@@ -38,6 +38,9 @@ metabase/metabase.db.mv.db
 docs/
 .claude/
 
+# Render demo — exported CSVs (regenerate with scripts/export_mart_to_csv.py)
+scripts/mart_export/
+
 # OS
 .DS_Store
 Thumbs.db

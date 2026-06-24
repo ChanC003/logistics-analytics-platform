@@ -34,8 +34,11 @@ metabase/plugins/
 metabase/metabase.db*
 metabase/metabase.db.mv.db
 
-# Internal docs & Claude config — not for public repo
-docs/
+# Internal docs — only setup.md + architecture.md + screenshots are public
+docs/data-model.md
+docs/data-quality-strategy.md
+docs/entity-map.md
+docs/learning-guide.md
 .claude/
 CLAUDE.md
 processing.md

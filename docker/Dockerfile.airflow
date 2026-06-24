@@ -1,9 +1,35 @@
-FROM airflow-custom:2.9.3
+# Image Airflow GỘP dùng chung cho project 02 (logistics, dbt-duckdb) và 04 (HR, dbt-mysql + ML).
+# Base Python 3.11 (ràng buộc chặt của HR: pandas 2.1.4 / sklearn / xgboost / SQLAlchemy 1.4).
+# dbt-duckdb của 02 chạy tốt trên 3.11 — không có ràng buộc 3.12.
+# Build 1 lần, tag data-airflow:2.9.3, cả 2 compose cùng dùng (xem docker-image-consistency.md).
+FROM apache/airflow:2.9.3-python3.11
+
+USER root
+# Build deps cho mysqlclient / psycopg2 / xgboost runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential default-libmysqlclient-dev pkg-config libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
 USER airflow
 
-# Install dbt-duckdb into Airflow's virtualenv at /home/airflow/.local
-RUN /home/airflow/.local/bin/pip install --no-cache-dir \
-    "dbt-duckdb==1.7.5" \
-    "duckdb==1.1.3" \
-    "pyarrow==17.0.0"
+# Hợp nhất deps của CẢ HAI pipeline trên cùng dbt-core 1.7.x.
+# - 02 logistics: dbt-duckdb + duckdb + pyarrow
+# - 04 HR: dbt-mysql + psycopg2 + mysql-connector + ML stack (pin chặt cho Airflow 2.9 / SQLAlchemy 1.4)
+RUN pip install --no-cache-dir \
+        dbt-core==1.7.19 \
+        dbt-duckdb==1.7.5 \
+        dbt-mysql==1.7.0 \
+        duckdb==1.1.3 \
+        pyarrow==17.0.0 \
+        psycopg2-binary==2.9.9 \
+        mysql-connector-python==8.4.0 \
+        SQLAlchemy==1.4.52 \
+        pandas==2.1.4 \
+        numpy==1.26.4 \
+        scikit-learn==1.5.0 \
+        xgboost==2.0.3 \
+        shap==0.45.1 \
+        joblib==1.4.2 \
+        python-dotenv==1.0.1
+
+ENV DBT_PROFILES_DIR=/opt/airflow/dbt_profile

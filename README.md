@@ -19,24 +19,27 @@ End-to-end analytics platform simulating a Vietnamese 3PL network — 59M synthe
 ## Quick Start
 
 ```bash
-# 1. Generate synthetic data (one-time, ~52 min)
+# 1. Create .env file from template
+cp docker/.env.example docker/.env   # then fill in passwords in docker/.env
+
+# 2. Generate synthetic data (one-time, ~52 min)
 python -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
 python src/generators/generate_all.py --seed 42
 
-# 2. Build DuckDB warehouse
+# 3. Build DuckDB warehouse
 cd dbt_project
 dbt deps && dbt seed && dbt run && dbt test
 
-# 3. Start Airflow + Metabase
+# 4. Start Airflow + Metabase
 cd ..\docker
 docker compose up -d
 ```
 
 | Service | URL | Credentials |
 |---|---|---|
-| Airflow | http://localhost:8080 | admin / admin |
-| Metabase | http://localhost:3000 | admin@logistics.local / admin1234! |
+| Airflow | http://localhost:8080 | `AIRFLOW_ADMIN_USER` / `AIRFLOW_ADMIN_PASSWORD` (see `docker/.env`) |
+| Metabase | http://localhost:3000 | auto-configured on first `docker compose up` |
 
 Full guide: [docs/setup.md](docs/setup.md)
 
@@ -133,18 +136,24 @@ Image `logistics-airflow:2.9.3` = `airflow-custom:2.9.3` + dbt-duckdb 1.7.5 + du
 
 ---
 
-## Metabase Dashboards
+## Metabase Dashboard
 
-4 dashboards querying mart tables directly via DuckDB JDBC:
+1 dashboard with 4 tabs, organized in collection "Logistics Analytics Platform":
 
-| Dashboard | Questions | Source Table |
-|---|---|---|
-| 01 - KPI Overview | Weekly KPI table + Shipment trend + Success rate trend | `mart_daily_kpi` |
-| 02 - Hub Performance | Hub table + Top 10 throughput bar | `mart_hub_performance` |
-| 03 - SLA Analysis | SLA table + Breach by region + Failure distribution | `mart_sla_breakdown`, `mart_failure_reasons` |
-| 04 - COD Reconciliation | Discrepancy by region/quarter | `mart_cod_reconciliation` |
+```
+📁 Logistics Analytics Platform
+  ├── 📁 Dashboard
+  │    └── 📊 Logistics Analytics Dashboard
+  │         ├── KPI Overview        (3 cards — mart_daily_kpi)
+  │         ├── Hub Performance     (2 cards — mart_hub_performance)
+  │         ├── SLA Analysis        (3 cards — mart_sla_breakdown, mart_failure_reasons)
+  │         └── COD Reconciliation  (1 card  — mart_cod_reconciliation)
+  ├── 📁 Question
+  │    ├── 📁 KPI Overview / Hub Performance / SLA Analysis / COD Reconciliation
+  └── 📁 Source
+```
 
-Dashboard JSON exports: `metabase/dashboards/`
+Dashboard JSON exports (for restore): `metabase/dashboards/`
 
 ---
 

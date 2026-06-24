@@ -37,6 +37,11 @@ metabase/metabase.db.mv.db
 # Internal docs & Claude config — not for public repo
 docs/
 .claude/
+CLAUDE.md
+processing.md
+
+# Metabase dashboard runtime DB (stored in dashboards/ subfolder)
+metabase/dashboards/metabase.db*
 
 # Render demo — exported CSVs (regenerate with scripts/export_mart_to_csv.py)
 scripts/mart_export/

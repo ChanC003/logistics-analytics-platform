@@ -16,9 +16,9 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
-    AIRFLOW__CORE__FERNET_KEY: 'change-me-in-production-32-chars-key=='
-    AIRFLOW__WEBSERVER__SECRET_KEY: 'change-me-in-production'
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:Changph03%40@airflow-db/${AIRFLOW_DB_NAME}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
     # dbt needs these at runtime inside containers
     DBT_PROFILES_DIR: /opt/airflow/dbt_project
@@ -40,9 +40,9 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
+      POSTGRES_USER: ${AIRFLOW_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME}
     volumes:
       - airflow-db-data:/var/lib/postgresql/data
     healthcheck:
@@ -57,7 +57,7 @@ services:
   airflow-init:
     <<: *airflow-common
     restart: on-failure
-    command: bash -c "airflow db migrate && (airflow users create --username admin --firstname Chang --lastname PH --role Admin --email admin@logistics.local --password admin || true)"
+    command: bash -c "airflow db migrate && (airflow users create --username ${AIRFLOW_ADMIN_USER} --firstname Chang --lastname PH --role Admin --email admin@logistics.local --password ${AIRFLOW_ADMIN_PASSWORD} || true)"
     depends_on:
       airflow-db:
         condition: service_healthy
@@ -107,6 +107,7 @@ services:
       - '3000:3000'
     environment:
       MB_DB_TYPE: h2
+      MB_DB_FILE: /metabase-data/metabase.db
       JAVA_OPTS: '-Xmx1g'
     volumes:
       - ../metabase/plugins:/app/plugins

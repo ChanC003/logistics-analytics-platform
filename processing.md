@@ -1,7 +1,30 @@
 # Processing — 02 Logistics Analytics Platform
 
-**Ngay cap nhat:** 2026-06-23
+**Ngay cap nhat:** 2026-06-24
 **Trang thai:** Phase 3 + Phase 4 COMPLETE (Airflow DAG 5/5 success, Metabase live port 3000) — Phase 5 in progress
+
+---
+
+## CAP NHAT 2026-06-24 — Docker: shared image + retag metabase
+
+Gop image Airflow voi project 04 + doi ten metabase de tai su dung (chay ca 3 stack 02/03/04 song song).
+
+- **Airflow:** doi `logistics-airflow:2.9.3` → **`data-airflow:2.9.3`** (shared voi project 04).
+  Dockerfile.airflow viet lai: base `apache/airflow:2.9.3-python3.11` (KHONG con airflow-custom:2.9.3 / Python 3.12
+  — base do la image build truoc, khong co Dockerfile trong repo, da bi xoa). Hop nhat dbt-duckdb 1.7.5 +
+  dbt-mysql 1.7.0 + duckdb + pyarrow + ML stack tren cung dbt-core 1.7.19. compose them build block (context `.`).
+- **Metabase:** retag `logistics-metabase:0.52.9` → **`metabase-duckdb:0.52.9`** (cung image ID, image khong doi,
+  chi doi ten tag de tai dung cho project DuckDB khac). compose tro tag moi.
+- **Don image:** xoa 3 image cu (logistics-airflow, hr-airflow, logistics-metabase) + build cache + container
+  exited → giai phong ~9GB. Giu n8n/redis/alpine/minio (ngoai pham vi 3 project).
+- **Port:** 02 giu nguyen Metabase 3000 / Airflow 8080 (project 04 da remap 5434/8090 de khong dung).
+- **Verify:** recreate stack 02 → metabase healthy + airflow webserver healthy voi image moi. Commit `3889692`.
+- Cung lan don: bo file Render deployment (render.yaml + 3 script) — demo chay qua local docker-compose,
+  khong can host Render. Commit `a39c34e`.
+
+> Bonus: fix loi dbt Power User "configuration is invalid : logistics://macros\\route_quarantine.sql" —
+> nguyen nhan stale `target/partial_parse.msgpack` (cache file-ID backslash tren Windows). Fix:
+> `dbt parse --no-partial-parse` regenerate cache + Reload Window. (Da co rule --no-partial-parse trong DAG.)
 
 ---
 

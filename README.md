@@ -225,3 +225,12 @@ Dashboard JSON exports (for restore): `metabase/dashboards/`
 - **Metabase custom image required**: the official `metabase/metabase` image (Alpine/musl) cannot
   load the DuckDB JNI driver. `Dockerfile.metabase` builds on `eclipse-temurin:21-jre-jammy`
   (Ubuntu 22.04, glibc) to resolve missing symbols (`__res_init`, `backtrace`, `malloc_trim`).
+
+- **Airflow login fails after changing `AIRFLOW_ADMIN_USER`**: `airflow-init` uses INSERT — if the
+  email already exists in the DB volume (from a prior run), it skips with `UniqueViolation` and the
+  new user is never created. Fix: remove the stale volume and restart.
+  ```bash
+  docker compose down
+  docker volume rm logistics_airflow-db-data
+  docker compose up -d
+  ```

@@ -4,18 +4,6 @@ End-to-end analytics platform simulating a Vietnamese 3PL network — 59M synthe
 
 ---
 
-## Status
-
-| Phase | Component | Status |
-|---|---|---|
-| 1 | Data generation (59M rows, 11 parquet) | COMPLETE |
-| 2 | DuckDB + dbt (88 PASS / 1 WARN / 0 ERROR) | COMPLETE |
-| 3 | Airflow DAG (5/5 tasks success, ~3 min) | COMPLETE |
-| 4 | Metabase (4 dashboards, 4 tabs, DuckDB live) | COMPLETE |
-| 5 | Docs + demo-ready | COMPLETE |
-
----
-
 ## Quick Start
 
 ```bash
@@ -42,6 +30,18 @@ docker compose up -d
 | Metabase | http://localhost:3000 | auto-configured on first `docker compose up` |
 
 Full guide: [docs/setup.md](docs/setup.md)
+
+---
+
+## Status
+
+| Phase | Component | Status |
+|---|---|---|
+| 1 | Data generation (59M rows, 11 parquet) | COMPLETE |
+| 2 | DuckDB + dbt (88 PASS / 1 WARN / 0 ERROR) | COMPLETE |
+| 3 | Airflow DAG (5/5 tasks success, ~3 min) | COMPLETE |
+| 4 | Metabase (1 dashboard, 4 tabs, DuckDB live) | COMPLETE |
+| 5 | Docs + demo-ready | COMPLETE |
 
 ---
 
@@ -171,12 +171,10 @@ Dashboard JSON exports (for restore): `metabase/dashboards/`
 
 ```
 02-Logistics-Analytics-Platform/
-├── README.md            -- this file (actual stack + status)
-├── processing.md        -- phase-by-phase journal with decisions + issues
+├── README.md            -- this file
 ├── requirements.txt     -- Python deps for generator
 ├── docs/
 │   ├── architecture.md  -- detailed flow, layer responsibility, actuals
-│   ├── data-model.md    -- schema, ERD, volume targets
 │   ├── setup.md         -- step-by-step setup + troubleshooting
 │   └── screenshots/     -- Airflow + Metabase screenshots
 ├── src/generators/      -- 12 Python files: 6 dim + 5 fact + generate_all.py
@@ -190,6 +188,7 @@ Dashboard JSON exports (for restore): `metabase/dashboards/`
 ├── metabase/plugins/    -- duckdb.metabase-driver.jar (MotherDuck v0.3.0, 73 MB, DuckDB 1.2.1)
 ├── metabase/dashboards/ -- 4 dashboard JSON exports (01-kpi, 02-hub, 03-sla, 04-cod)
 ├── docker/
+│   ├── .env.example         -- env template
 │   ├── docker-compose.yml   -- full stack (postgres + 2x airflow + metabase)
 │   ├── Dockerfile.airflow   -- logistics-airflow:2.9.3 with dbt-duckdb
 │   └── Dockerfile.metabase  -- logistics-metabase:0.52.9 (Ubuntu/glibc + MotherDuck DuckDB driver)
